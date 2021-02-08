@@ -19,6 +19,7 @@ library(stringr)
 
 # 1. Data section ---------------------------------------------------------
 #Tag data
+  #Summarise data
 options(stringsAsFactors = FALSE) 
 setwd('C:/Matias/Data/Tagging/Satellite/sPAT_2020')
 Serial=read.csv('Serial.csv')
@@ -73,6 +74,9 @@ for(i in 1:length(all.files))
 
   all.dat[[i]]=list(All=All,DailyData=DailyData,Series=Series,Summary=Summary)
 }
+
+  #Archived data from reported tags
+Archived_19P1600=read.csv('C:/Matias/Data/Tagging/Satellite/sPAT_2020/19P1600_Archive.csv')
 
 #Bio data
 setwd("U:/Shark")  # working directory
@@ -157,6 +161,27 @@ suppressWarnings({DATA=rbind(DATA,Al.data)%>%
 
 # 2. Data manipulation section ---------------------------------------------------------
 
+#Archived 
+Archived_19P1600=Archived_19P1600%>%
+              mutate(Time.Perth=parse_date_time(Time,c('%H:%M:%S %d-%m-%Y'))+8*60*60)%>% #convert UTC to Perth time
+              mutate(Round.Date=round_date(Time.Perth,"hour"))%>%
+              group_by(Round.Date)%>%
+              summarise(Depth=mean(Depth,na.rm=T),
+                        Temperature=mean(Temperature,na.rm=T),
+                        Light.Level=mean(Light.Level,na.rm=T))%>%
+              mutate(Round.day=date(Round.Date),
+                     Round.Date=as.POSIXct(as.character(Round.Date), tz="Australia/Perth"))
+Relis <- matrix(c(116.82,-35.05), nrow=1)
+Relis <- SpatialPoints(Relis, proj4string=CRS("+proj=longlat +datum=WGS84"))
+Sun.rise=sunriset(Relis,  Archived_19P1600$Round.Date,  direction="sunrise", POSIXct.out=TRUE)
+Sun.set=sunriset(Relis, Archived_19P1600$Round.Date, direction="sunset", POSIXct.out=TRUE)
+Archived_19P1600$Sun.rise=Sun.rise$time
+Archived_19P1600$Sun.set=Sun.set$time
+Archived_19P1600=Archived_19P1600%>%
+       mutate(Time.period=ifelse(Round.Date>=Sun.rise & Round.Date<Sun.set,"Day","Night"))
+
+
+#Summaries
 All=vector('list',length(all.files))
 DailyData=Series=Summaries=All
 
@@ -264,6 +289,22 @@ write.csv(Summaries,"Summaries.csv",row.names = FALSE)
 # 3. Data analysis section ---------------------------------------------------------
 setwd('C:\\Matias\\Students\\2020_Taylor Grosse\\Outputs')
 
+#Archived
+Archived_19P1600%>%
+  mutate(Time.period=ifelse(Depth<0,"Detached",Time.period))%>%
+  ggplot(aes(Round.Date,Depth,colour=Time.period))+
+  geom_point(size=1.1) + 
+  scale_y_continuous(trans = "reverse")+
+  theme(legend.title=element_blank(),
+        legend.position="top",
+        axis.text.x=element_text(size=8),
+        axis.text.y=element_text(size=8),
+        strip.text = element_text(size = 7))+
+  ylab("Depth (m)")+xlab("Date")+ expand_limits(y=0)
+ggsave('Fine.scale_depth_Archived_19P1600.tiff', width = 12,height = 6, dpi = 300, compression = "lzw")
+
+
+#Summaries
 #type of tag releases
 Tab.rel=Summaries%>%
   group_by(Ptt,COMMON_NAME,ReleaseType)%>%summarise(n=n())%>%
