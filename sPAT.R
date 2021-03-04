@@ -290,10 +290,16 @@ write.csv(Summaries,"Summaries.csv",row.names = FALSE)
 setwd('C:\\Matias\\Students\\2020_Taylor Grosse\\Outputs')
 
 #Archived
+  #add release date and time to check recovery
+Archived_19P1600_release=DATA%>%
+  filter(PSATTagSerial=="19P1600")%>%
+  mutate(DATE.stamp=as.POSIXct(paste(as.character(DATE),as.character(AVE.HAUL.TIME)))+24*60*60)
+
 Archived_19P1600%>%
   mutate(Time.period=ifelse(Depth<0,"Detached",Time.period))%>%
   ggplot(aes(Round.Date,Depth,colour=Time.period))+
   geom_point(size=1.1) + 
+  geom_point(aes(x=Archived_19P1600_release$DATE.stamp,y=0),shape=8, color="grey40", size=4)+
   scale_y_continuous(trans = "reverse")+
   theme(legend.title=element_blank(),
         legend.position="top",
