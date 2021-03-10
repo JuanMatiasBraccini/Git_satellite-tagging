@@ -9,6 +9,10 @@
 # Summary.csv     Simply a summary of the data from the tag. 
 # .pxp            A Igor file that we can use to visualize tag data as above. At the end of this email I have copied some information on how to download free Igor to view your data.
 
+
+#Missing: Sort out 'Hi lactate' level
+
+
 library(tidyverse)
 library(dplyr)
 library(lubridate)
@@ -16,6 +20,7 @@ library(maptools)
 library(RODBC)
 library(chron)
 library(stringr)
+library(data.table)
 
 # 1. Data section ---------------------------------------------------------
 #Tag data
@@ -156,12 +161,20 @@ Al.data=Al.data%>%
   dplyr::select(names(DATA))
 
 suppressWarnings({DATA=rbind(DATA,Al.data)%>%
-    mutate(HookedTime=chron(times=HookedTime))
+    mutate(HookedTime=chron(times=HookedTime),
+           SEX=tolower(SEX))
 })
+
+#Sort out hook timer popping during gear deployment
+DATA=DATA%>%
+  mutate(soak.time=case_when(Method=="LL"~AVE.HAUL.TIME-AVE.SET.TIME),
+         HookedTime.original=HookedTime,
+         HookedTime=ifelse(HookedTime>(soak.time-as.times("00:10:00")),"",HookedTime))
+class(DATA$HookedTime)<- "times"
 
 # 2. Data manipulation section ---------------------------------------------------------
 
-#Archived 
+#Archived Port Jackson
 Archived_19P1600=Archived_19P1600%>%
               mutate(Time.Perth=parse_date_time(Time,c('%H:%M:%S %d-%m-%Y'))+8*60*60)%>% #convert UTC to Perth time
               mutate(Round.Date=round_date(Time.Perth,"hour"))%>%
@@ -260,7 +273,7 @@ DATA=DATA%>%
   mutate(PSATTagNumber=ifelse(PSATTagNumber=="19P1598","200436",
                        ifelse(PSATTagNumber=="19P1653","200435",
                        PSATTagNumber)),
-         PSATTagSerial=ifelse(PSATTagSerial=="19O1465","19P1485",
+         PSATTagSerial=ifelse(PSATTagSerial=="19P1465","19P1485",
                        ifelse(PSATTagSerial=="200435","19P1653",
                        ifelse(PSATTagSerial=="200436","19P1598",
                        PSATTagSerial))))
@@ -270,30 +283,31 @@ Series=left_join(Series,DATA,by=c('Serial'='PSATTagSerial'))
 
 Summaries=left_join(Summaries,DATA,by=c('Serial'='PSATTagSerial'))
 
-#Order by datetime
+#Order by datetime and create ID tag
 Series=Series%>%
-          mutate(ID=paste(SPECIES,Serial," h.time",HookedTime," Lac",Lactate))%>%
+          mutate(ID=paste(PSATTagNumber," h.time",HookedTime," Lac",Lactate))%>%
           arrange(Ptt,datetime)
 DailyData=DailyData%>%
-          mutate(ID=paste(SPECIES,Serial," h.time",HookedTime," Lac",Lactate))%>%
+          mutate(ID=paste(PSATTagNumber," h.time",HookedTime," Lac",Lactate))%>%
           arrange(Ptt,Date)
 
 #Export data for Taylor
-setwd('C:/Matias/Students/2020_Taylor Grosse/Outputs/data.for.Taylor')
+hndl.Taylor='C:/Matias/Students/2020_Taylor Grosse/data.for.Taylor'
+setwd(hndl.Taylor)
 write.csv(All,"All.csv",row.names = FALSE)
 write.csv(DailyData,"DailyData.csv",row.names = FALSE)
 write.csv(Series,"Series.csv",row.names = FALSE)
 write.csv(Summaries,"Summaries.csv",row.names = FALSE)
 
 
-# 3. Data analysis section ---------------------------------------------------------
-setwd('C:\\Matias\\Students\\2020_Taylor Grosse\\Outputs')
+# 3. General analysis section ---------------------------------------------------------
+setwd('C:\\Matias\\Analyses\\Satellite_tagging\\Outputs')
 
-#Archived
-  #add release date and time to check recovery
+#Archived Port Jackson
 Archived_19P1600_release=DATA%>%
   filter(PSATTagSerial=="19P1600")%>%
-  mutate(DATE.stamp=as.POSIXct(paste(as.character(DATE),as.character(AVE.HAUL.TIME)))+24*60*60)
+  mutate(DATE.stamp=as.POSIXct(
+         paste(as.character(DATE),as.character(AVE.HAUL.TIME)))+24*60*60) #add release datetime to check post release recovery
 
 Archived_19P1600%>%
   mutate(Time.period=ifelse(Depth<0,"Detached",Time.period))%>%
@@ -307,87 +321,113 @@ Archived_19P1600%>%
         axis.text.y=element_text(size=8),
         strip.text = element_text(size = 7))+
   ylab("Depth (m)")+xlab("Date")+ expand_limits(y=0)
-ggsave('Fine.scale_depth_Archived_19P1600.tiff', width = 12,height = 6, dpi = 300, compression = "lzw")
+ggsave('Port Jackson/Fine.scale_depth_Archived_19P1600.tiff', width = 12,height = 6, dpi = 300, compression = "lzw")
+
+
+#Identify species
+Species=unique(Series$COMMON_NAME)
+n.sp=length(Species)
 
 
 #Summaries
-#type of tag releases
-Tab.rel=Summaries%>%
-  group_by(Ptt,COMMON_NAME,ReleaseType)%>%summarise(n=n())%>%
-  spread(ReleaseType,n,fill='')%>%
-  data.frame
-write.csv(Tab.rel,"Table.release.types.csv",row.names = F)
+  #type of tag releases
+for(s in 1:n.sp)
+{
+  Tab.rel=Summaries%>%
+    filter(COMMON_NAME==Species[s])%>%
+    group_by(Ptt,COMMON_NAME,ReleaseType)%>%summarise(n=n())%>%
+    spread(ReleaseType,n,fill='')%>%
+    data.frame
+  write.csv(Tab.rel,paste(Species[s],"Table.release.types.csv",sep="/"),row.names = F)
+}
 
 
-#3.1 Plot depth by datetime
-
-
-#3.1.1 Fine scale
-
-ggplot(Series,aes(datetime,Depth,colour=Time.period))+
-  geom_point(size=.7) + 
-  facet_wrap(vars(ID), scales = "free")+  
-  scale_y_continuous(trans = "reverse")+
-  theme(legend.title=element_blank(),
-        legend.position="top",
-        axis.text.x=element_text(size=8),
-        axis.text.y=element_text(size=8),
-        strip.text = element_text(size = 7))+
-  ylab("Depth (m)")+xlab("Date")+ expand_limits(y=0)
-ggsave('Fine.scale_depth.tiff', width = 12,height = 6, dpi = 300, compression = "lzw")
-
-
-#3.1.2 Broad scale
-
+#3.1 Depth by datetime
+#3.1.1 fine scale
+for(s in 1:n.sp)
+{
+  Series%>%
+    filter(COMMON_NAME==Species[s])%>%
+    ggplot(aes(datetime,Depth,colour=Time.period))+
+      geom_point(size=.7) + 
+      facet_wrap(vars(ID), scales = "free")+  
+      scale_y_continuous(trans = "reverse")+
+      theme(legend.title=element_blank(),
+            legend.position="top",
+            axis.text.x=element_text(size=8),
+            axis.text.y=element_text(size=8),
+            strip.text = element_text(size = 7))+
+      ylab("Depth (m)")+xlab("Date")+ expand_limits(y=0)
+  ggsave(paste(Species[s],'Fine.scale_depth.tiff',sep="/"), width = 12,height = 6, dpi = 300, compression = "lzw")
+  
+}
+#3.1.2 broad scale
   #min and max depth
-ggplot(DailyData,aes(Date,MinDepth))+
-  geom_line(aes(color="Min")) +
-  geom_line(aes(Date,MaxDepth,color="Max")) +
-  facet_wrap(vars(ID), scales = "free")+  
-  scale_y_continuous(trans = "reverse")+
-  labs(fill="Depth")+ 
-  theme(legend.title=element_blank(),
-        axis.text.x=element_text(size=8),
-        axis.text.y=element_text(size=8),
-        strip.text = element_text(size = 7))+
-  ylab("Depth (m)")+xlab("Date")+ expand_limits(y=0)
-ggsave('Broad.scale_min.max_depth.tiff', width = 12,height = 6, dpi = 300, compression = "lzw")
-
+for(s in 1:n.sp)
+{
+  DailyData%>%
+    filter(COMMON_NAME==Species[s])%>%
+    ggplot(aes(Date,MinDepth))+
+    geom_line(aes(color="Min")) +
+    geom_line(aes(Date,MaxDepth,color="Max")) +
+    facet_wrap(vars(ID), scales = "free")+  
+    scale_y_continuous(trans = "reverse")+
+    labs(fill="Depth")+ 
+    theme(legend.title=element_blank(),
+          axis.text.x=element_text(size=8),
+          axis.text.y=element_text(size=8),
+          strip.text = element_text(size = 7))+
+    ylab("Depth (m)")+xlab("Date")+ expand_limits(y=0)
+  ggsave(paste(Species[s],'Broad.scale_min.max_depth.tiff',sep="/"), width = 12,height = 6, dpi = 300, compression = "lzw")
+  
+}
   #max depth only
-ggplot(DailyData,aes(Date,MaxDepth))+
-  geom_line() +
-  facet_wrap(vars(ID), scales = "free")+  
-  scale_y_continuous(trans = "reverse")+
-  theme(axis.text.x=element_text(size=8),
-        axis.text.y=element_text(size=8),
-        strip.text = element_text(size = 7))+
-  ylab("Depth (m)")+xlab("Date")+ expand_limits(y=0)
-ggsave('Broad.scale_max.depth_only.tiff', width = 12,height = 6, dpi = 300, compression = "lzw")
+for(s in 1:n.sp)
+{
+  DailyData%>%
+    filter(COMMON_NAME==Species[s])%>%
+    ggplot(aes(Date,MaxDepth))+
+      geom_line() +
+      facet_wrap(vars(ID), scales = "free")+  
+      scale_y_continuous(trans = "reverse")+
+      theme(axis.text.x=element_text(size=8),
+            axis.text.y=element_text(size=8),
+            strip.text = element_text(size = 7))+
+      ylab("Depth (m)")+xlab("Date")+ expand_limits(y=0)
+  ggsave(paste(Species[s],'Broad.scale_max.depth_only.tiff',sep="/"), width = 12,height = 6, dpi = 300, compression = "lzw")
+}
 
-  #temperature
-ggplot(DailyData,aes(Date,MaxTemp))+
-  geom_line() +
-  facet_wrap(vars(ID), scales = "free")+  
-  theme(axis.text.x=element_text(size=8),
-        axis.text.y=element_text(size=8),
-        strip.text = element_text(size = 7))+
-  ylab("Temperature (C)")+xlab("Date")
-ggsave('Broad.scale_max.temperature.only.tiff', width = 12,height = 6, dpi = 300, compression = "lzw")
+#3.2 Temperature by datetime
+for(s in 1:n.sp)
+{
+    DailyData%>%
+      filter(COMMON_NAME==Species[s])%>%
+      ggplot(aes(Date,MaxTemp))+
+        geom_line() +
+        facet_wrap(vars(ID), scales = "free")+  
+        theme(axis.text.x=element_text(size=8),
+              axis.text.y=element_text(size=8),
+              strip.text = element_text(size = 7))+
+        ylab("Temperature (C)")+xlab("Date")
+    ggsave(paste(Species[s],'Broad.scale_max.temperature.only.tiff',sep="/"), width = 12,height = 6, dpi = 300, compression = "lzw")
+}
 
+#3.3 Light by datetime
+for(s in 1:n.sp)
+{
+  DailyData%>%
+    filter(COMMON_NAME==Species[s])%>%
+    ggplot(aes(Date,DeltaLight))+
+      geom_line() +
+      facet_wrap(vars(ID),scales="free_x")+  
+      theme(axis.text.x=element_text(size=8),
+            axis.text.y=element_text(size=8),
+            strip.text = element_text(size = 7))+
+      ylab("DeltaLight")+xlab("Date")
+  ggsave(paste(Species[s],'Broad.scale_deltaLight.tiff',sep="/"), width = 12,height = 6, dpi = 300, compression = "lzw")
+}
 
-#light
-ggplot(DailyData,aes(Date,DeltaLight))+
-  geom_line() +
-  facet_wrap(vars(ID),scales="free_x")+  
-  theme(axis.text.x=element_text(size=8),
-        axis.text.y=element_text(size=8),
-        strip.text = element_text(size = 7))+
-  ylab("DeltaLight")+xlab("Date")
-ggsave('Broad.scale_deltaLight.tiff', width = 12,height = 6, dpi = 300, compression = "lzw")
-
-
-
-#3.2 Check deep diving
+#3.4 Check deep diving for sandbar shark with unusual depth
 Check.deep.dive=FALSE
 if(Check.deep.dive)
 {
@@ -430,8 +470,7 @@ if(Check.deep.dive)
 
 }
 
-
-#3.3 Archived data for consumed dusky
+#3.3 Consumed dusky archived data
 Check.archived=FALSE
 if(Check.archived)
 {
@@ -450,7 +489,118 @@ if(Check.archived)
   
   ggarrange(p1, p2, p3, ncol = 1, nrow = 3)
   
-  ggsave('Consumed_dusky.tiff', width = 9,height = 6, dpi = 300, compression = "lzw")
+  ggsave('Dusky shark/Consumed_dusky.tiff', width = 9,height = 6, dpi = 300, compression = "lzw")
   
-  write.csv(Archived,'C:/Matias/Students/2020_Taylor Grosse/Outputs/data.for.Taylor/Consumed.dusky.csv',row.names = F)
+  write.csv(Archived,paste(hndl.Taylor,'Consumed.dusky.csv',sep='/'),row.names = F)
+}
+
+#3.4 Depth frequency distributions by day/night
+for(s in 1:n.sp)
+{
+  ggplot() +
+    facet_wrap(vars(ID), scales = "free") +
+    geom_histogram(data=subset(Series,COMMON_NAME==Species[s] & Time.period=="Day"),
+                   aes(x = Depth, y = ..density.., fill="Day"),bins=30) +
+    geom_histogram(data=subset(Series,COMMON_NAME==Species[s] & Time.period=="Night"),
+                   aes(x = Depth, y = -..density.., fill="Night"),bins=30)+
+    coord_flip() +
+    theme(legend.title=element_blank(),
+          legend.position="top",
+          axis.text.x=element_text(size=8),
+          axis.text.y=element_text(size=8),
+          strip.text = element_text(size = 7))+
+    xlab("Depth (m)")+ylab("Density")+ expand_limits(y=0)
+  ggsave(paste(Species[s],'Fine.scale_depth_frequency_dist.tiff',sep="/"), width = 12,height = 6, dpi = 300, compression = "lzw")
+  
+}
+
+
+# 5. Post release survival analysis section ---------------------------------------------------------
+#note: use Kaplan - Meier survival (Schaefer et al 2021)
+# for basic tutorial, see http://www.sthda.com/english/wiki/survival-analysis-basics
+
+#Scenarios on mortality definition
+Scenarios=data.frame(Scenario=c("S1","S2"),Death.def=c("dead=only sinkers","dead=all premature"))
+n.scen=nrow(Scenarios)
+
+#fit model
+fit.formula=as.formula(Surv(DataDays, status) ~ 1)
+fun.surv=function(d,Formula,Scenario,Depth)
+{
+  #add depth last location
+  Depth <- Depth %>% 
+    group_by(Ptt) %>%
+    filter(datetime == max(datetime))%>%
+    dplyr::select(Ptt,datetime,Depth)%>%
+    mutate(Depth=round(Depth))
+  d=d%>%
+    left_join(Depth,by="Ptt")%>%
+    distinct(Ptt,SEX,ReleaseDate,EarliestDataTime,LatestDataTime,DataDays,
+             ReleaseType,Depth,Lactate,HookedTime,Release.condition)
+  
+  #define mortality
+  if(Scenario=="dead=only sinkers")
+  {
+    d=d%>%
+      mutate(status=case_when(ReleaseType=="Premature" & Depth>5~1,   #not working, this is surface!!! should be bottom....
+                              TRUE~0))
+  }
+  if(Scenario=="dead=all premature")
+  {
+    d=d%>%
+      mutate(status=case_when(ReleaseType=='Premature'~1,
+                              TRUE~0))
+  }
+  
+  #fit model
+  fit <- survfit(Formula, data = d)
+  
+  return(list(fit=fit))
+}
+Store.surv.fit=vector('list',n.sp)
+names(Store.surv.fit)=Species
+for(s in 1:n.sp)
+{
+ dummy=vector('list',length=n.scen)
+ names(dummy)=Scenarios$Scenario
+ for(l in 1:n.scen)
+ {
+   dummy[[l]]=fun.surv(d=Summaries%>%filter(COMMON_NAME==Species[s]),
+                Formula=fit.formula,
+                Scenario=Scenarios$Death.def[l],
+                Depth=Series%>%filter(COMMON_NAME==Species[s]))
+ }
+ Store.surv.fit[[s]]=dummy
+}
+
+#plot model
+Scen.col=c("green","blue")
+names(Scen.col)=Scenarios$Scenario
+plot.surv=function(scenarios,name)
+{
+  plot(1,ylim=c(0,1),xlim=c(0,33),col="transparent",xlab='',ylab='',main=name)
+  for(l in n.scen)
+  {
+    with(summary(scenarios[[l]]$fit),
+    {
+      points(time,surv,col=Scen.col[l],pch=19,cex=1.25)
+      segments(time,lower,time,upper,col=Scen.col[l])
+    })
+  }
+  mtext("Days",1,cex=1.5,line=2)
+  mtext("Survival probability",2,cex=1.5,line=2)
+  legend("topright",Scenarios$Scenario,bty='n',pch=19,col=Scen.col,cex=1.25)
+}
+for(s in 1:n.sp) plot.surv(scenarios=Store.surv.fit[[s]],
+                            name=names(Store.surv.fit)[s])
+
+#Test effect of hook time, release condition, and lactate levels on survival  #ACA
+
+
+
+# 6. Periodicity in vertical movements analysis section ---------------------------------------------------------
+#note: use Continuous Wavelet Transformations (Burke et al 2020)
+for(s in 1:n.sp)
+{
+  
 }
