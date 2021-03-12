@@ -11,6 +11,11 @@
 
 
 #Missing: Sort out 'Hi lactate' level
+#         vertical migrations: use depth and time to calculate speed, is it 
+#           changing depending o migration direction, etc? see Coffey et al 2020;
+#           can also analyse using GAM as for depth... and can also follow 
+#           Papastamatiou et al 2018 on a whole range of 
+#           behavioural analsysis on the sat tagging data (stand alone paper?)
 
 
 library(tidyverse)
@@ -21,6 +26,7 @@ library(RODBC)
 library(chron)
 library(stringr)
 library(data.table)
+library(mgcv)
 
 # 1. Data section ---------------------------------------------------------
 #Tag data
@@ -574,7 +580,7 @@ for(s in 1:n.sp)
 }
 
 #plot model
-Scen.col=c("green","blue")
+Scen.col=c("forestgreen","firebrick")
 names(Scen.col)=Scenarios$Scenario
 plot.surv=function(scenarios,name)
 {
@@ -594,13 +600,159 @@ plot.surv=function(scenarios,name)
 for(s in 1:n.sp) plot.surv(scenarios=Store.surv.fit[[s]],
                             name=names(Store.surv.fit)[s])
 
-#Test effect of hook time, release condition, and lactate levels on survival  #ACA
+#Test effect of hook time, release condition, and lactate levels on survival  
+#note: is there enough contrast in survival data?
 
 
 
 # 6. Periodicity in vertical movements analysis section ---------------------------------------------------------
-#note: use Continuous Wavelet Transformations (Burke et al 2020)
-for(s in 1:n.sp)
+#GAM for relative speed and CWT for depth datetime? but autocorrelation?
+
+#note: use GAM on time of day (Papastamatiou et al 2018)
+#      Another option could be Continuous Wavelet Transformations on datetime (Burke et al 2020)
+
+#GAM approach
+#https://fromthebottomoftheheap.net/2014/05/09/modelling-seasonal-data-with-gam/
+#https://fromthebottomoftheheap.net/2014/05/15/identifying-periods-of-change-with-gams/
+#follow Papastamatiou et al 2018 (grouping dates)
+fn.periodicity.gam=function(d,show.plot=FALSE)
 {
+  d=d%>%
+    mutate(datetime.numeric=as.numeric(d$datetime)/1e6,
+           time=as.numeric(as.times(format(d$datetime, format = "%H:%M:%S"))),
+           Ptt=factor(Ptt))%>%
+    group_by(Ptt)%>%
+    mutate(rel.depth=Depth/mean(Depth))%>%
+    filter(Depth>2)%>% #remove records at surface (i.e. after tag detached)  
+    filter(!Ptt%in%c(200432,200445))%>% #remove PJ shark with default release settings and predated dusky
+    ungroup()%>%
+    dplyr::select(Ptt,Time.period,datetime,Depth,datetime.numeric,time,rel.depth)
   
+  if(show.plot)
+  {
+    d%>%
+      arrange(time)%>%
+      ggplot(aes(time,rel.depth,colour=Time.period))+
+      geom_point(size=.7) + 
+      scale_y_continuous(trans = "reverse")+
+      facet_wrap(vars(Ptt), scales = "free")+
+      theme(legend.title=element_blank(),
+            legend.position="top",
+            axis.text.x=element_text(size=8),
+            axis.text.y=element_text(size=8),
+            strip.text = element_text(size = 7))+
+      ylab("Relative depth")+xlab("Time")+ expand_limits(y=0)
+    
+    d%>%
+      arrange(datetime.numeric)%>%
+      ggplot(aes(datetime.numeric,rel.depth,colour=Time.period))+
+      geom_point(size=.7) + 
+      scale_y_continuous(trans = "reverse")+
+      facet_wrap(vars(Ptt), scales = "free")+
+      theme(legend.title=element_blank(),
+            legend.position="top",
+            axis.text.x=element_text(size=8),
+            axis.text.y=element_text(size=8),
+            strip.text = element_text(size = 7))+
+      ylab("Relative depth")+xlab("datetime.numeric")+ expand_limits(y=0)
+  }
+  
+  #Fit gam with autocorrelation
+  ctrl <- list(niterEM = 0, msVerbose = TRUE, optimMethod="L-BFGS-B")
+  mod <- gamm(rel.depth ~ s(time, bs = "cc"), data = d,
+             correlation = corARMA(form = ~ 1|Ptt, p = 1),control = ctrl)
+  
+  
+  #Preliminary stuff, select best model
+      #1. No autocorrelation
+  #m <- gamm(rel.depth ~ s(time, bs = "cc"), data = d)
+  
+      #2. Consider autocorrelation
+  #m1 <- gamm(rel.depth ~ s(time, bs = "cc"), data = d,
+  #           correlation = corARMA(form = ~ 1|Ptt, p = 1),control = ctrl)
+  #m2 <- gamm(rel.depth ~ s(time, bs = "cc"), data = d,
+  #           correlation = corARMA(form = ~ 1|Ptt, p = 2),control = ctrl)
+  #m3 <- gamm(rel.depth ~ s(time, bs = "cc"), data = d,
+  #           correlation = corARMA(form = ~ 1|Ptt, p = 3),control = ctrl)
+  
+  #Compare all models
+  #anova(m$lme, m1$lme, m2$lme, m3$lme)  m3 selected best model
+  
+  #check autocorrelation
+  # layout(matrix(1:2, ncol = 2))
+  # acf(resid(m$lme), lag.max = 36, main = "ACF")
+  # pacf(resid(m$lme), lag.max = 36, main = "pACF")
+  # res <- resid(m1$lme, type = "normalized")
+  # acf(res, lag.max = 36, main = "ACF - AR(2) errors")
+  # pacf(res, lag.max = 36, main = "pACF- AR(2) errors")
+  # layout(1)
+  
+  
+  return(list(mod=mod,data=d))
 }
+
+Store.gam=vector('list',n.sp)
+names(Store.gam)=Species
+system.time({for(s in 1:n.sp)
+{
+  Store.gam[[s]]=fn.periodicity.gam(d=Series%>%filter(COMMON_NAME==Species[s]))
+}})
+
+
+hm <- merge(0:23, 0)
+Time.ref=data.frame(Times=chron(time = paste(hm$x, ':', hm$y, ':', 0)))
+Time.ref$Times.numeric=as.numeric(Time.ref$Times)
+
+#Display diel pattern
+fn.pred.gam=function(mod,data)
+{
+  p  <- predict(mod$gam,type="terms",se.fit=TRUE)
+  data=data%>%
+          mutate(pred=p$fit[,"s(time)"],
+               se=p$se.fit[,"s(time)"],
+               lowerCI=pred-1.96*se,
+               upperCI=pred+1.96*se)
+  
+  data%>%
+    ggplot(aes(datetime,pred))+
+    #geom_point(aes(time,rel.depth),size=.7) + 
+    geom_line(aes(datetime,pred),colour="steelblue",size=2) +
+    geom_ribbon(aes(ymin=lowerCI, ymax=upperCI), alpha=0.1)+
+    #facet_wrap(vars(Ptt), scales = "free")+ 
+    scale_y_continuous(trans = "reverse")+
+    theme(legend.title=element_blank(),
+          legend.position="top",
+          axis.text.x=element_text(size=8),
+          axis.text.y=element_text(size=8),
+          strip.text = element_text(size = 7))+
+    ylab("Relative depth")+xlab("Time of day")+ 
+    scale_x_chron(format = "%H:%M:%S", n = 5)   #still not there.....
+}
+
+chron(times=sapply(strsplit(as.character(AVE.SET.TIME)," "), '[[', 2))
+
+p  <- predict(m$gam,  newdata = pdat, type = "terms", se.fit = TRUE)
+p1 <- predict(m1$gam, newdata = pdat, type = "terms", se.fit = TRUE)
+p2 <- predict(m2$gam, newdata = pdat, type = "terms", se.fit = TRUE)
+p3 <- predict(m3$gam, newdata = pdat, type = "terms", se.fit = TRUE)
+
+## combine with the predictions data, including fitted and SEs
+pdat <- transform(pdat,
+                  p  = p$fit[,1],  se  = p$se.fit[,1],
+                  p1 = p1$fit[,1], se1 = p1$se.fit[,1],
+                  p2 = p2$fit[,1], se2 = p2$se.fit[,1],
+                  p3 = p3$fit[,1], se3 = p3$se.fit[,1])
+
+pdat%>%
+  ggplot(aes(time,p1))+
+  geom_point(size=.7) + 
+  facet_wrap(vars(Ptt), scales = "free")+  
+  scale_y_continuous(trans = "reverse")+
+  theme(legend.title=element_blank(),
+        legend.position="top",
+        axis.text.x=element_text(size=8),
+        axis.text.y=element_text(size=8),
+        strip.text = element_text(size = 7))+
+  ylab("Relative depth (m)")+xlab("Date")+ expand_limits(y=0)
+
+
