@@ -366,7 +366,23 @@ for(s in 1:n.sp)
             strip.text = element_text(size = 7))+
       ylab("Depth (m)")+xlab("Date")+ expand_limits(y=0)
   ggsave(paste(Species[s],'Fine.scale_depth.tiff',sep="/"), width = 12,height = 6, dpi = 300, compression = "lzw")
-  
+}
+
+for(s in 1:n.sp)
+{
+  Series%>%
+    filter(COMMON_NAME==Species[s])%>%
+    ggplot(aes(datetime,Depth,colour=Time.period))+
+    geom_point(size=.7) + 
+    facet_wrap(vars(ID), scales = "free_x")+  
+    scale_y_continuous(trans = "reverse")+
+    theme(legend.title=element_blank(),
+          legend.position="top",
+          axis.text.x=element_text(size=8),
+          axis.text.y=element_text(size=8),
+          strip.text = element_text(size = 7))+
+    ylab("Depth (m)")+xlab("Date")+ expand_limits(y=0)
+  ggsave(paste(Species[s],'Fine.scale_depth_same.scale.tiff',sep="/"), width = 12,height = 6, dpi = 300, compression = "lzw")
 }
   #3.1.2 broad scale
   #min and max depth
@@ -585,6 +601,8 @@ Scen.col=c("forestgreen","firebrick")
 names(Scen.col)=Scenarios$Scenario
 plot.surv=function(scenarios,name)
 {
+  tiff(paste(Species[s],'Survival_analysis.tiff',sep="/"),width=2000,height=2000,units="px",res=300,compression="lzw")
+  par(las=1,mar=c(3,3,1,.1),oma=c(.2,.2,.05,.05),mgp=c(1,.5,0))
   plot(1,ylim=c(0,1),xlim=c(0,33),col="transparent",xlab='',ylab='',main=name)
   for(l in n.scen)
   {
@@ -595,8 +613,9 @@ plot.surv=function(scenarios,name)
     })
   }
   mtext("Days",1,cex=1.5,line=2)
-  mtext("Survival probability",2,cex=1.5,line=2)
+  mtext("Survival probability",2,cex=1.5,line=2,las=3)
   legend("topright",Scenarios$Scenario,bty='n',pch=19,col=Scen.col,cex=1.25)
+  dev.off()
 }
 for(s in 1:n.sp) plot.surv(scenarios=Store.surv.fit[[s]],
                             name=names(Store.surv.fit)[s])
@@ -729,7 +748,7 @@ fn.periodicity.gam=function(D)
 
 Store.gam=vector('list',n.sp)
 names(Store.gam)=Species
-system.time({for(s in 1:n.sp)
+system.time({for(s in 1:n.sp)  #takes 18 minutes for sandbar
 {
   Store.gam[[s]]=fn.periodicity.gam(D=Series%>%filter(COMMON_NAME==Species[s]))
 }})
