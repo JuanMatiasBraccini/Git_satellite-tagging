@@ -29,11 +29,13 @@ library(data.table)
 library(mgcv)
 library(mgcViz)
 
+handl_OneDrive=function(x)paste('C:/Users/myb/OneDrive - Department of Primary Industries and Regional Development/Matias',x,sep='/')
+
 # 1. Data section ---------------------------------------------------------
 #Tag data
   #Summarise data
 options(stringsAsFactors = FALSE) 
-setwd('C:/Matias/Data/Tagging/Satellite/sPAT_2020')
+setwd(handl_OneDrive('Data/Tagging/Satellite/sPAT_2020'))
 Serial=read.csv('Serial.csv')
 toMatch <- c("All.csv", "DailyData.csv", "Series.csv","Summary.csv")
 all.files=list.files(paste(getwd(),'/downloads',sep=''))
@@ -88,7 +90,7 @@ for(i in 1:length(all.files))
 }
 
   #Archived data from reported tags
-Archived_19P1600=read.csv('C:/Matias/Data/Tagging/Satellite/sPAT_2020/19P1600_Archive.csv')
+Archived_19P1600=read.csv(handl_OneDrive('Data/Tagging/Satellite/sPAT_2020/19P1600_Archive.csv'))
 
 #Bio data
 setwd("U:/Shark")  # working directory
@@ -96,7 +98,7 @@ channel <- odbcConnectAccess2007("Sharks v20200323.mdb")
 Boat_bio=sqlFetch(channel, "Boat_bio", colnames = F) 
 Boat_hdr=sqlFetch(channel, "Boat_hdr", colnames = F)   
 close(channel)
-SPECIES.names=read.csv("C:/Matias/Data/Species.code.csv")
+SPECIES.names=read.csv(handl_OneDrive("Data/Species.code.csv"))
 
 suppressWarnings({DATA=left_join(Boat_bio,Boat_hdr,by="SHEET_NO")%>%
       filter(!is.na(PSATTagNumber) & !SPECIES=='WP')%>%
@@ -122,7 +124,7 @@ suppressWarnings({DATA=left_join(Boat_bio,Boat_hdr,by="SHEET_NO")%>%
 })
 
 #Al's deployments
-Al.data=read.csv('C:/Matias/Data/Tagging/Satellite/sPAT_2020/Al_data.csv')
+Al.data=read.csv(handl_OneDrive('Data/Tagging/Satellite/sPAT_2020/Al_data.csv'))
 Al.data=Al.data%>%
     rename(HookedTime=hook._timer,
          BOTDEPTH=depth,
@@ -299,7 +301,7 @@ DailyData=DailyData%>%
           arrange(Ptt,Date)
 
 #Export data for Taylor
-hndl.Taylor='C:/Matias/Students/2020_Taylor Grosse/data.for.Taylor'
+hndl.Taylor=handl_OneDrive('Students/2020_Taylor Grosse/data.for.Taylor')
 setwd(hndl.Taylor)
 write.csv(All,"All.csv",row.names = FALSE)
 write.csv(DailyData,"DailyData.csv",row.names = FALSE)
@@ -308,7 +310,7 @@ write.csv(Summaries,"Summaries.csv",row.names = FALSE)
 
 
 # 3. General analysis section ---------------------------------------------------------
-setwd('C:\\Matias\\Analyses\\Satellite_tagging\\Outputs')
+setwd(handl_OneDrive('Analyses\\Satellite_tagging\\Outputs'))
 
 #Archived Port Jackson
 Archived_19P1600_release=DATA%>%
@@ -456,10 +458,10 @@ if(Check.deep.dive)
 {
   library(PBSmapping)
   library(geosphere)
-  source('C:/Matias/Analyses/SOURCE_SCRIPTS/Git_other/Plot.Map.R')
+  source(handl_OneDrive('Analyses/SOURCE_SCRIPTS/Git_other/Plot.Map.R'))
   
-  Bathymetry_120=read.table("C:/Matias/Data/Mapping/get_data112_120.cgi")
-  Bathymetry_138=read.table("C:/Matias/Data/Mapping/get_data120.05_138.cgi")
+  Bathymetry_120=read.table(handl_OneDrive("Data/Mapping/get_data112_120.cgi"))
+  Bathymetry_138=read.table(handl_OneDrive("Data/Mapping/get_data120.05_138.cgi"))
   Bathymetry=rbind(Bathymetry_120,Bathymetry_138)
   Bathymetry=subset(Bathymetry,V2>=(-25) & V2<=(-21))
   Bathymetry=subset(Bathymetry,V1>=(111) & V1<=(114))
@@ -498,7 +500,7 @@ Check.archived=FALSE
 if(Check.archived)
 {
   library(ggpubr)
-  Archived=read.csv('C:/Matias/Data/Tagging/Satellite/sPAT_2020/downloads/200445/200445-Archive.csv')
+  Archived=read.csv(handl_OneDrive('Data/Tagging/Satellite/sPAT_2020/downloads/200445/200445-Archive.csv'))
   Archived=Archived%>%
     mutate(
       hora=sub("\\s.*","",Time),
