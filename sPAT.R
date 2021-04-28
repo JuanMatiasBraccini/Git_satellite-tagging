@@ -363,10 +363,14 @@ for(s in 1:n.sp)
       scale_y_continuous(trans = "reverse")+
       theme(legend.title=element_blank(),
             legend.position="top",
-            axis.text.x=element_text(size=8),
-            axis.text.y=element_text(size=8),
-            strip.text = element_text(size = 7))+
-      ylab("Depth (m)")+xlab("Date")+ expand_limits(y=0)
+            legend.text = element_text(size = 10),
+            axis.text.x=element_text(size=8.5),
+            axis.text.y=element_text(size=8.5),
+            strip.text = element_text(size = 8),
+            axis.title=element_text(size=12),
+            plot.margin = unit(c(.1,.1,.1,.1), "cm"))+
+      ylab("Depth (m)")+xlab("Date")+ expand_limits(y=0)+
+    guides(colour = guide_legend(override.aes = list(size=3)))
   ggsave(paste(Species[s],'Fine.scale_depth.tiff',sep="/"), width = 12,height = 6, dpi = 300, compression = "lzw")
 }
 
@@ -380,10 +384,12 @@ for(s in 1:n.sp)
     scale_y_continuous(trans = "reverse")+
     theme(legend.title=element_blank(),
           legend.position="top",
-          axis.text.x=element_text(size=8),
-          axis.text.y=element_text(size=8),
-          strip.text = element_text(size = 7))+
-    ylab("Depth (m)")+xlab("Date")+ expand_limits(y=0)
+          legend.text = element_text(size = 10),
+          axis.text.x=element_text(size=8.5),
+          axis.text.y=element_text(size=8.5),
+          strip.text = element_text(size = 8))+
+    ylab("Depth (m)")+xlab("Date")+ expand_limits(y=0)+
+    guides(colour = guide_legend(override.aes = list(size=3)))
   ggsave(paste(Species[s],'Fine.scale_depth_same.scale.tiff',sep="/"), width = 12,height = 6, dpi = 300, compression = "lzw")
 }
   #3.1.2 broad scale
@@ -395,17 +401,56 @@ for(s in 1:n.sp)
     ggplot(aes(Date,MinDepth))+
     geom_line(aes(color="Min")) +
     geom_line(aes(Date,MaxDepth,color="Max")) +
+    facet_wrap(vars(ID), scales = "free")+
+    scale_y_continuous(trans = "reverse")+
+    labs(fill="Depth")+
+    theme(legend.title=element_blank(),
+          legend.text = element_text(size = 10),
+          axis.text.x=element_text(size=8.5),
+          axis.text.y=element_text(size=8.5),
+          strip.text = element_text(size = 8))+
+    ylab("Depth (m)")+xlab("Date")+ expand_limits(y=0)
+   ggsave(paste(Species[s],'Broad.scale_min.max_depth.tiff',sep="/"), width = 12,height = 8, dpi = 300, compression = "lzw")
+  
+}
+
+  #min and max depth and temp
+for(s in 1:n.sp)
+{
+  d=DailyData%>%
+    filter(COMMON_NAME==Species[s])%>%
+    mutate(MinTemp=ifelse(MinTemp<0,NA,MinTemp),
+           MaxTemp=ifelse(MaxTemp<0,NA,MaxTemp))
+  #myfuns <- list(min, median, max)
+  #ls_val <- unlist(lapply(myfuns, function(f) f(c(d$MinTemp,d$MaxTemp),na.rm=T)))
+  ls_val=round(quantile(c(d$MinTemp,d$MaxTemp),probs=c(.01,.2,.55,.99),na.rm=T))
+  names(ls_val)=round(ls_val)
+  d%>%
+    ggplot(aes(Date,MinDepth))+
+    geom_line() +
+    geom_point(aes(shape="Min",color=MinTemp),size=2) +
+    geom_line(aes(Date,MaxDepth)) +
+    geom_point(aes(Date,MaxDepth,shape="Max",color=MaxTemp),size=2) +
     facet_wrap(vars(ID), scales = "free")+  
     scale_y_continuous(trans = "reverse")+
     labs(fill="Depth")+ 
     theme(legend.title=element_blank(),
-          axis.text.x=element_text(size=8),
-          axis.text.y=element_text(size=8),
-          strip.text = element_text(size = 7))+
-    ylab("Depth (m)")+xlab("Date")+ expand_limits(y=0)
-  ggsave(paste(Species[s],'Broad.scale_min.max_depth.tiff',sep="/"), width = 12,height = 6, dpi = 300, compression = "lzw")
+          legend.text = element_text(size = 10),
+          axis.text.x=element_text(size=8.5),
+          axis.text.y=element_text(size=8.5),
+          strip.text = element_text(size = 8),
+          axis.title=element_text(size=12),
+          legend.position="top",
+          legend.key=element_blank(),
+          plot.margin = unit(c(.1,.5,.1,.1), "cm"))+
+    ylab("Depth (m)")+xlab("Date")+ expand_limits(y=0)+
+    scale_colour_gradientn(colours = c("red","orange","yellow","lightblue","steelblue"),
+                           values = c(1.0,0.8,0.6,0.4,0.2,0),
+                           breaks = ls_val)
+  ggsave(paste(Species[s],'Broad.scale_min.max_depth_temp.tiff',sep="/"), width = 12,height = 6, dpi = 300, compression = "lzw")
   
 }
+
   #max depth only
 for(s in 1:n.sp)
 {
@@ -531,9 +576,10 @@ for(s in 1:n.sp)
     coord_flip() +
     theme(legend.title=element_blank(),
           legend.position="top",
-          axis.text.x=element_text(size=8),
-          axis.text.y=element_text(size=8),
-          strip.text = element_text(size = 7))+
+          legend.text = element_text(size = 10),
+          axis.text.x=element_text(size=8.5),
+          axis.text.y=element_text(size=8.5),
+          strip.text = element_text(size = 8))+
     xlab("Depth (m)")+ylab("Density")+ expand_limits(y=0)
   ggsave(paste(Species[s],'Fine.scale_depth_frequency_dist.tiff',sep="/"), width = 12,height = 6, dpi = 300, compression = "lzw")
   
